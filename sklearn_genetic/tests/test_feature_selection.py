@@ -579,3 +579,36 @@ def test_expected_ga_schedulers():
     assert "features" in cv_result_keys
 
     assert crossover_scheduler.current_value + mutation_scheduler.current_value <= 1
+
+
+def test_use_numpy_array():
+    data_boston = load_diabetes()
+
+    y_diabetes = data_boston["target"]
+    X_diabetes = data_boston["data"]
+
+    X_train_b, X_test_b, y_train_b, y_test_b = train_test_split(
+        X_diabetes, y_diabetes, test_size=0.33, random_state=42
+    )
+
+    clf = DecisionTreeRegressor()
+    generations = 6
+    evolved_estimator = GAFeatureSelectionCV(
+        clf,
+        cv=3,
+        scoring="max_error",
+        population_size=5,
+        generations=generations,
+        tournament_size=3,
+        elitism=True,
+        crossover_probability=0.9,
+        mutation_probability=0.05,
+        criteria="min",
+        n_jobs=-1,
+        use_numpy_array=True,
+    )
+
+    evolved_estimator.fit(X_train_b, y_train_b)
+
+    assert check_is_fitted(evolved_estimator) is None
+    assert len(evolved_estimator.predict(X_test_b)) == len(X_test_b)

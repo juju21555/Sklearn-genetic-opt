@@ -27,8 +27,8 @@ from .utils.cv_scores import (
     create_gasearch_cv_results_,
     create_feature_selection_cv_results_,
 )
-from .utils.random import weighted_bool_individual
-from .utils.tools import cxUniform, mutFlipBit
+from .utils.random import weighted_bool_individual, np_weighted_bool_individual
+from .utils.tools import cxUniform, mutFlipBit, np_cxUniform, np_mutFlipBit
 
 
 class GASearchCV(BaseSearchCV):
@@ -793,6 +793,12 @@ class GAFeatureSelectionCV(MetaEstimatorMixin, SelectorMixin, BaseEstimator):
     log_config : :class:`~sklearn_genetic.mlflow.MLflowConfig`, default = None
         Configuration to log metrics and models to mlflow, of None,
         no mlflow logging will be performed
+        
+    use_numpy_array : bool, default=False
+        If ``True``, use numpy array to store selected features of an instance 
+        (represented as a 1D array of fixed size ``max_features`` and elements 
+        corresponding to the index of selected feature) for better perfomance
+        and smaller memory usage.
 
     Attributes
     ----------
@@ -856,6 +862,7 @@ class GAFeatureSelectionCV(MetaEstimatorMixin, SelectorMixin, BaseEstimator):
         error_score=np.nan,
         return_train_score=False,
         log_config=None,
+        use_numpy_array=False
     ):
         self.estimator = estimator
         self.cv = cv
@@ -880,6 +887,7 @@ class GAFeatureSelectionCV(MetaEstimatorMixin, SelectorMixin, BaseEstimator):
         self.return_train_score = return_train_score
         self.creator = creator
         self.log_config = log_config
+        self.use_numpy_array = use_numpy_array
 
         # Check that the estimator is compatible with scikit-learn
         if not is_classifier(self.estimator) and not is_regressor(self.estimator):
@@ -903,23 +911,43 @@ class GAFeatureSelectionCV(MetaEstimatorMixin, SelectorMixin, BaseEstimator):
         # Criteria sign to set max or min problem
         # And -1.0 as second weight to minimize number of features
         self.creator.create("FitnessMax", base.Fitness, weights=[self.criteria_sign, -1.0])
-        self.creator.create("Individual", list, fitness=creator.FitnessMax)
+        
+        if self.use_numpy_array:
+            self.creator.create("Individual", np.ndarray, fitness=creator.FitnessMax)
+            # Register the array to choose the features
+            # Each value represents the index of the seleacted feature
+            
+            self.toolbox.register(
+                "individual",
+                np_weighted_bool_individual,
+                creator.Individual,
+                weight=self.features_proportion,
+                size=self.n_features,
+            )
+            
+            self.toolbox.register("mate", np_cxUniform, indpb=self.crossover_adapter.current_value)
+            self.toolbox.register("mutate", np_mutFlipBit, indpb=self.mutation_adapter.current_value, n_features=self.n_features)
+            self._hof = tools.HallOfFame(self.keep_top_k, similar=np.array_equal)
+                
+        else:
+            self.creator.create("Individual", list, fitness=creator.FitnessMax)
+            # Register the array to choose the features
+            # Each binary value represents if the feature is selected or not
 
-        # Register the array to choose the features
-        # Each binary value represents if the feature is selected or not
+            self.toolbox.register(
+                "individual",
+                weighted_bool_individual,
+                creator.Individual,
+                weight=self.features_proportion,
+                size=self.n_features,
+            )
+            
+            self.toolbox.register("mate", cxUniform, indpb=self.crossover_adapter.current_value)
+            self.toolbox.register("mutate", mutFlipBit, indpb=self.mutation_adapter.current_value)
+            self._hof = tools.HallOfFame(self.keep_top_k)
 
-        self.toolbox.register(
-            "individual",
-            weighted_bool_individual,
-            creator.Individual,
-            weight=self.features_proportion,
-            size=self.n_features,
-        )
 
         self.toolbox.register("population", tools.initRepeat, list, self.toolbox.individual)
-
-        self.toolbox.register("mate", cxUniform, indpb=self.crossover_adapter.current_value)
-        self.toolbox.register("mutate", mutFlipBit, indpb=self.mutation_adapter.current_value)
 
         if self.elitism:
             self.toolbox.register("select", tools.selTournament, tournsize=self.tournament_size)
@@ -929,7 +957,6 @@ class GAFeatureSelectionCV(MetaEstimatorMixin, SelectorMixin, BaseEstimator):
         self.toolbox.register("evaluate", self.evaluate)
 
         self._pop = self.toolbox.population(n=self.population_size)
-        self._hof = tools.HallOfFame(self.keep_top_k)
 
         # Stats among axis 0 to get two values:
         # One based on the score and the other in the number of features
@@ -957,13 +984,16 @@ class GAFeatureSelectionCV(MetaEstimatorMixin, SelectorMixin, BaseEstimator):
             The second one is the number of features selected
 
         """
-
-        bool_individual = np.array(individual, dtype=bool)
+        if self.use_numpy_array:            
+            bool_individual = individual
+            n_selected_features = bool_individual.shape[0]
+        else:
+            bool_individual = np.array(individual, dtype=bool)
+            n_selected_features = np.sum(individual)
 
         current_generation_params = {"features": bool_individual}
 
         local_estimator = clone(self.estimator)
-        n_selected_features = np.sum(individual)
 
         # Compute the cv-metrics using only the selected features
         cv_results = cross_validate(
@@ -1074,7 +1104,10 @@ class GAFeatureSelectionCV(MetaEstimatorMixin, SelectorMixin, BaseEstimator):
         # Update the _n_iterations value as the algorithm could stop earlier due a callback
         self._n_iterations = n_gen
 
-        self.best_features_ = np.array(self._hof[0], dtype=bool)
+        if self.use_numpy_array:
+            self.best_features_ = self._hof[0]
+        else:
+            self.best_features_ = np.array(self._hof[0], dtype=bool)
         self.support_ = self.best_features_
 
         self.cv_results_ = create_feature_selection_cv_results_(
@@ -1092,7 +1125,10 @@ class GAFeatureSelectionCV(MetaEstimatorMixin, SelectorMixin, BaseEstimator):
         }
 
         if self.refit:
-            bool_individual = np.array(self.best_features_, dtype=bool)
+            if self.use_numpy_array:
+                bool_individual = self.best_features_
+            else:
+                bool_individual = np.array(self.best_features_, dtype=bool)
 
             refit_start_time = time.time()
             self.estimator.fit(self.X_[:, bool_individual], self.y_)
