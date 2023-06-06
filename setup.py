@@ -35,9 +35,7 @@ setup(
         "Source Code": "https://github.com/rodrigo-arenas/Sklearn-genetic-opt",
         "Bug Tracker": "https://github.com/rodrigo-arenas/Sklearn-genetic-opt/issues",
     },
-    packages=find_packages(
-        include=["sklearn_genetic", "sklearn_genetic.*"], exclude=["*tests*"]
-    ),
+    packages=find_packages(include=["sklearn_genetic", "sklearn_genetic.*"], exclude=["*tests*"]),
     install_requires=[
         "scikit-learn>=1.1.0",
         "numpy>=1.19.0",

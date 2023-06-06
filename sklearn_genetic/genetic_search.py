@@ -793,10 +793,10 @@ class GAFeatureSelectionCV(MetaEstimatorMixin, SelectorMixin, BaseEstimator):
     log_config : :class:`~sklearn_genetic.mlflow.MLflowConfig`, default = None
         Configuration to log metrics and models to mlflow, of None,
         no mlflow logging will be performed
-        
+
     use_numpy_array : bool, default=False
-        If ``True``, use numpy array to store selected features of an instance 
-        (represented as a 1D array of fixed size ``max_features`` and elements 
+        If ``True``, use numpy array to store selected features of an instance
+        (represented as a 1D array of fixed size ``max_features`` and elements
         corresponding to the index of selected feature) for better perfomance
         and smaller memory usage.
 
@@ -862,7 +862,7 @@ class GAFeatureSelectionCV(MetaEstimatorMixin, SelectorMixin, BaseEstimator):
         error_score=np.nan,
         return_train_score=False,
         log_config=None,
-        use_numpy_array=False
+        use_numpy_array=False,
     ):
         self.estimator = estimator
         self.cv = cv
@@ -911,12 +911,12 @@ class GAFeatureSelectionCV(MetaEstimatorMixin, SelectorMixin, BaseEstimator):
         # Criteria sign to set max or min problem
         # And -1.0 as second weight to minimize number of features
         self.creator.create("FitnessMax", base.Fitness, weights=[self.criteria_sign, -1.0])
-        
+
         if self.use_numpy_array:
             self.creator.create("Individual", np.ndarray, fitness=creator.FitnessMax)
             # Register the array to choose the features
             # Each value represents the index of the seleacted feature
-            
+
             self.toolbox.register(
                 "individual",
                 np_weighted_bool_individual,
@@ -924,11 +924,16 @@ class GAFeatureSelectionCV(MetaEstimatorMixin, SelectorMixin, BaseEstimator):
                 weight=self.features_proportion,
                 size=self.n_features,
             )
-            
+
             self.toolbox.register("mate", np_cxUniform, indpb=self.crossover_adapter.current_value)
-            self.toolbox.register("mutate", np_mutFlipBit, indpb=self.mutation_adapter.current_value, n_features=self.n_features)
+            self.toolbox.register(
+                "mutate",
+                np_mutFlipBit,
+                indpb=self.mutation_adapter.current_value,
+                n_features=self.n_features,
+            )
             self._hof = tools.HallOfFame(self.keep_top_k, similar=np.array_equal)
-                
+
         else:
             self.creator.create("Individual", list, fitness=creator.FitnessMax)
             # Register the array to choose the features
@@ -941,11 +946,10 @@ class GAFeatureSelectionCV(MetaEstimatorMixin, SelectorMixin, BaseEstimator):
                 weight=self.features_proportion,
                 size=self.n_features,
             )
-            
+
             self.toolbox.register("mate", cxUniform, indpb=self.crossover_adapter.current_value)
             self.toolbox.register("mutate", mutFlipBit, indpb=self.mutation_adapter.current_value)
             self._hof = tools.HallOfFame(self.keep_top_k)
-
 
         self.toolbox.register("population", tools.initRepeat, list, self.toolbox.individual)
 
@@ -984,7 +988,7 @@ class GAFeatureSelectionCV(MetaEstimatorMixin, SelectorMixin, BaseEstimator):
             The second one is the number of features selected
 
         """
-        if self.use_numpy_array:            
+        if self.use_numpy_array:
             bool_individual = individual
             n_selected_features = bool_individual.shape[0]
         else:
