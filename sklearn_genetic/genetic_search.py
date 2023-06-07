@@ -1109,7 +1109,9 @@ class GAFeatureSelectionCV(MetaEstimatorMixin, SelectorMixin, BaseEstimator):
         self._n_iterations = n_gen
 
         if self.use_numpy_array:
-            self.best_features_ = self._hof[0]
+            mask = np.zeros(self.n_features, dtype=bool)
+            mask[self._hof[0]] = 1
+            self.best_features_ = mask
         else:
             self.best_features_ = np.array(self._hof[0], dtype=bool)
         self.support_ = self.best_features_
@@ -1129,10 +1131,7 @@ class GAFeatureSelectionCV(MetaEstimatorMixin, SelectorMixin, BaseEstimator):
         }
 
         if self.refit:
-            if self.use_numpy_array:
-                bool_individual = self.best_features_
-            else:
-                bool_individual = np.array(self.best_features_, dtype=bool)
+            bool_individual = np.array(self.best_features_, dtype=bool)
 
             refit_start_time = time.time()
             self.estimator.fit(self.X_[:, bool_individual], self.y_)
@@ -1297,12 +1296,7 @@ class GAFeatureSelectionCV(MetaEstimatorMixin, SelectorMixin, BaseEstimator):
                 f"or used refit=False. Call 'fit' with appropriate "
                 f"arguments before using this estimator."
             )
-        if self.use_numpy_array:
-            mask = np.zeros(self.n_features, dtype=bool)
-            mask[self.best_features_] = 1
-            return mask
-        else:
-            return self.best_features_
+        return self.best_features_
 
     @available_if(_estimator_has("decision_function"))
     def decision_function(self, X):
