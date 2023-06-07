@@ -1297,7 +1297,12 @@ class GAFeatureSelectionCV(MetaEstimatorMixin, SelectorMixin, BaseEstimator):
                 f"or used refit=False. Call 'fit' with appropriate "
                 f"arguments before using this estimator."
             )
-        return self.best_features_
+        if self.use_numpy_array:
+            mask = np.zeros(self.n_features, dtype=bool)
+            mask[self.best_features_] = 1
+            return mask
+        else:
+            return self.best_features_
 
     @available_if(_estimator_has("decision_function"))
     def decision_function(self, X):

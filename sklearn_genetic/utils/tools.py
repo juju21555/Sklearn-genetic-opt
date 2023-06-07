@@ -128,6 +128,8 @@ def np_cxUniform(ind1, ind2, indpb):
     ind1 = np.unique(ind1)
     ind1.fitness = fit1
 
+    fit2 = ind2.fitness
     ind2 = np.unique(ind2)
+    ind2.fitness = fit2
 
     return ind1, ind2
