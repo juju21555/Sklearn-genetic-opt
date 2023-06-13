@@ -20,6 +20,7 @@ from .genetic_search import GAFeatureSelectionCV
 This module contains some useful function to explore the results of the optimization routines
 """
 
+
 def plot_histogram_k_features_hof(estimator, k=16):
     """
     Parameters
@@ -34,19 +35,20 @@ def plot_histogram_k_features_hof(estimator, k=16):
     Lines plot with the fitness value in each generation
 
     """
-    
+
     sns.set_style("white")
-    
+
     all_features = np.concatenate(estimator.hof)
 
     palette = sns.color_palette("rocket")
     sns.set(rc={"figure.figsize": (10, 10)})
-    
-    ax = sns.countplot(y=all_features, order=pd.value_counts(all_features).iloc[:k].index, palette=palette)
+
+    ax = sns.countplot(
+        y=all_features, order=pd.value_counts(all_features).iloc[:k].index, palette=palette
+    )
     ax.set_title(f"Histogram of most selected features in HallOfFame")
     ax.set(xlabel="count", ylabel="feature")
     return ax
-    
 
 
 def plot_fitness_evolution(estimator, metric="fitness"):

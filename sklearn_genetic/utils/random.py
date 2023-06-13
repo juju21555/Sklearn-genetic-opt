@@ -42,8 +42,8 @@ def np_weighted_bool_individual(icls, weight, size):
     """
 
     if weight:
-        choice = np.random.choice(size, int(weight * size), replace=False)
+        choice = np.random.choice(size, size=int(size * weight), replace=False)
     else:
-        choice = np.random.choice(size, size // 2, replace=False)
+        choice = np.random.choice(size, size=size // 2, replace=False)
 
     return icls(choice)

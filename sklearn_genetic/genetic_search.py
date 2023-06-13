@@ -794,12 +794,6 @@ class GAFeatureSelectionCV(MetaEstimatorMixin, SelectorMixin, BaseEstimator):
         Configuration to log metrics and models to mlflow, of None,
         no mlflow logging will be performed
 
-    use_numpy_array : bool, default=False
-        If ``True``, use numpy array to store selected features of an instance
-        (represented as a 1D array of fixed size ``max_features`` and elements
-        corresponding to the index of selected feature) for better perfomance
-        and smaller memory usage.
-
     Attributes
     ----------
 
@@ -862,7 +856,7 @@ class GAFeatureSelectionCV(MetaEstimatorMixin, SelectorMixin, BaseEstimator):
         error_score=np.nan,
         return_train_score=False,
         log_config=None,
-        use_numpy_array=False,
+        features_proportion=None,
     ):
         self.estimator = estimator
         self.cv = cv
@@ -887,7 +881,7 @@ class GAFeatureSelectionCV(MetaEstimatorMixin, SelectorMixin, BaseEstimator):
         self.return_train_score = return_train_score
         self.creator = creator
         self.log_config = log_config
-        self.use_numpy_array = use_numpy_array
+        self.features_proportion = features_proportion
 
         # Check that the estimator is compatible with scikit-learn
         if not is_classifier(self.estimator) and not is_regressor(self.estimator):
@@ -912,51 +906,34 @@ class GAFeatureSelectionCV(MetaEstimatorMixin, SelectorMixin, BaseEstimator):
         # And -1.0 as second weight to minimize number of features
         self.creator.create("FitnessMax", base.Fitness, weights=[self.criteria_sign, -1.0])
 
-        if self.use_numpy_array:
-            self.creator.create("Individual", np.ndarray, fitness=creator.FitnessMax)
-            # Register the array to choose the features
-            # Each value represents the index of the seleacted feature
+        self.creator.create("Individual", np.ndarray, fitness=creator.FitnessMax)
+        # Register the array to choose the features
+        # Each value represents the index of the seleacted feature
 
-            self.toolbox.register(
-                "individual",
-                np_weighted_bool_individual,
-                creator.Individual,
-                weight=self.features_proportion,
-                size=self.n_features,
-            )
+        self.toolbox.register(
+            "individual",
+            np_weighted_bool_individual,
+            creator.Individual,
+            weight=self.features_proportion,
+            size=self.n_features,
+        )
 
-            self.toolbox.register("mate", np_cxUniform, indpb=self.crossover_adapter.current_value)
-            self.toolbox.register(
-                "mutate",
-                np_mutFlipBit,
-                indpb=self.mutation_adapter.current_value,
-                n_features=self.n_features,
-            )
-            self._hof = tools.HallOfFame(self.keep_top_k, similar=np.array_equal)
-
-        else:
-            self.creator.create("Individual", list, fitness=creator.FitnessMax)
-            # Register the array to choose the features
-            # Each binary value represents if the feature is selected or not
-
-            self.toolbox.register(
-                "individual",
-                weighted_bool_individual,
-                creator.Individual,
-                weight=self.features_proportion,
-                size=self.n_features,
-            )
-
-            self.toolbox.register("mate", cxUniform, indpb=self.crossover_adapter.current_value)
-            self.toolbox.register("mutate", mutFlipBit, indpb=self.mutation_adapter.current_value)
-            self._hof = tools.HallOfFame(self.keep_top_k)
+        self.toolbox.register("mate", np_cxUniform, indpb=self.crossover_adapter.current_value)
+        self.toolbox.register(
+            "mutate",
+            np_mutFlipBit,
+            indpb=self.mutation_adapter.current_value,
+            n_features=self.n_features,
+            max_features=self.max_features,
+        )
+        self._hof = tools.HallOfFame(self.keep_top_k, similar=np.array_equal)
 
         self.toolbox.register("population", tools.initRepeat, list, self.toolbox.individual)
 
         if self.elitism:
             self.toolbox.register("select", tools.selTournament, tournsize=self.tournament_size)
         else:
-            self.toolbox.register("select", tools.selRoulette)
+            self.toolbox.register("select", tools.selBest)
 
         self.toolbox.register("evaluate", self.evaluate)
 
@@ -988,18 +965,14 @@ class GAFeatureSelectionCV(MetaEstimatorMixin, SelectorMixin, BaseEstimator):
             The second one is the number of features selected
 
         """
-        if self.use_numpy_array:
-            bool_individual = individual
-            n_selected_features = bool_individual.shape[0]
-        else:
-            bool_individual = np.array(individual, dtype=bool)
-            n_selected_features = np.sum(individual)
+
+        bool_individual = individual
+        n_selected_features = bool_individual.shape[0]
 
         current_generation_params = {"features": bool_individual}
 
         local_estimator = clone(self.estimator)
 
-        # Compute the cv-metrics using only the selected features
         cv_results = cross_validate(
             local_estimator,
             self.X_[:, bool_individual],
@@ -1013,7 +986,18 @@ class GAFeatureSelectionCV(MetaEstimatorMixin, SelectorMixin, BaseEstimator):
         )
 
         cv_scores = cv_results[f"test_{self.refit_metric}"]
-        score = np.mean(cv_scores)
+
+        # Compute the cv-metrics using only the selected features
+        if self.X_val is not None:
+            local_estimator.fit(self.X_[:, bool_individual], self.y_)
+            score_val = local_estimator.score(self.X_val[:, bool_individual], self.y_val)
+
+            score = min(np.mean(cv_scores), score_val)
+        else:
+            score = np.mean(cv_scores)
+
+        if self.max_features:
+            score -= 0.01 * n_selected_features / self.max_features
 
         # Uses the log config to save in remote log server (e.g MLflow)
         if self.log_config is not None:
@@ -1050,7 +1034,7 @@ class GAFeatureSelectionCV(MetaEstimatorMixin, SelectorMixin, BaseEstimator):
 
         return [score, n_selected_features]
 
-    def fit(self, X, y, callbacks=None):
+    def fit(self, X, y, val_data=None, callbacks=None):
         """
         Main method of GAFeatureSelectionCV, starts the optimization
         procedure with to find the best features set
@@ -1068,15 +1052,20 @@ class GAFeatureSelectionCV(MetaEstimatorMixin, SelectorMixin, BaseEstimator):
             :class:`~sklearn_genetic.callbacks`.
             The callback is evaluated after fitting the estimators from the generation 1.
         """
+        self.X_val, self.y_val = None, None
+        if val_data:
+            (X_val, y_val) = val_data
+            self.X_val, self.y_val = check_X_y(X_val, y_val)
 
         self.X_, self.y_ = check_X_y(X, y)
+
         self.n_features = X.shape[1]
+
         self._n_iterations = self.generations + 1
         self.refit_metric = "score"
         self.multimetric_ = False
 
-        self.features_proportion = None
-        if self.max_features:
+        if self.max_features and not self.features_proportion:
             self.features_proportion = self.max_features / self.n_features
 
         # Make sure the callbacks are valid
@@ -1108,12 +1097,10 @@ class GAFeatureSelectionCV(MetaEstimatorMixin, SelectorMixin, BaseEstimator):
         # Update the _n_iterations value as the algorithm could stop earlier due a callback
         self._n_iterations = n_gen
 
-        if self.use_numpy_array:
-            mask = np.zeros(self.n_features, dtype=bool)
-            mask[self._hof[0]] = 1
-            self.best_features_ = mask
-        else:
-            self.best_features_ = np.array(self._hof[0], dtype=bool)
+        mask = np.zeros(self.n_features, dtype=bool)
+        mask[self._hof[0]] = 1
+        self.best_features_ = mask
+
         self.support_ = self.best_features_
 
         self.cv_results_ = create_feature_selection_cv_results_(

@@ -70,7 +70,7 @@ def check_bool_individual(individual):
     return individual
 
 
-def np_mutFlipBit(individual, indpb, n_features):
+def np_mutFlipBit(individual, indpb, n_features, max_features):
     """Emulate the ``mutFlipBit`` function with index array instead of boolean list.
     This is done by selecting randomly features to be mutated (with probability of *indbp*)
     and re-selecting random new features to replaces the selected features.
@@ -88,12 +88,17 @@ def np_mutFlipBit(individual, indpb, n_features):
     This function uses the :func:`~numpy.random.random` `~numpy.random.choice` and `~numpy.unique` function from numpy
     :mod:`numpy` module.
     """
-    mut_idx = np.random.random(individual.shape[0]) < indpb
-    individual[mut_idx] = np.random.choice(n_features, np.sum(mut_idx))
 
-    fit1 = individual.fitness
-    individual = np.unique(individual)
-    individual.fitness = fit1
+    mut_idx = np.where(np.random.random(individual.shape[0]) < indpb)[0]
+    new_individual = np.random.choice(n_features, size=individual.shape[0] + 1)
+
+    new_individual[mut_idx] = individual[mut_idx]
+
+    # fit = individual.fitness
+    individual = type(individual)(np.unique(new_individual))
+
+    # individual = np.unique(individual)
+    # individual.fitness = fit
 
     return (individual,)
 
@@ -117,19 +122,16 @@ def np_cxUniform(ind1, ind2, indpb):
     :mod:`numpy` module.
     """
 
+    np.random.shuffle(ind1)
+    np.random.shuffle(ind2)
+
     min_size = min(ind1.shape[0], ind2.shape[0])
-    cx_idx = np.where(np.random.random(min_size) < indpb)
 
-    tmp = ind1[cx_idx]
-    ind1[cx_idx] = ind2[cx_idx]
-    ind2[cx_idx] = tmp
+    cx_idx = np.where(np.random.random(min_size) < indpb)[0]
+    ind1[cx_idx], ind2[cx_idx] = ind2[cx_idx].copy(), ind1[cx_idx].copy()
 
-    fit1 = ind1.fitness
-    ind1 = np.unique(ind1)
-    ind1.fitness = fit1
+    ind1 = type(ind1)(np.unique(ind1))
 
-    fit2 = ind2.fitness
-    ind2 = np.unique(ind2)
-    ind2.fitness = fit2
+    ind2 = type(ind2)(np.unique(ind2))
 
     return ind1, ind2
