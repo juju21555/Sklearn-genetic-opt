@@ -856,7 +856,7 @@ class GAFeatureSelectionCV(MetaEstimatorMixin, SelectorMixin, BaseEstimator):
         error_score=np.nan,
         return_train_score=False,
         log_config=None,
-        features_proportion=None,
+        min_genes=None,
     ):
         self.estimator = estimator
         self.cv = cv
@@ -881,7 +881,7 @@ class GAFeatureSelectionCV(MetaEstimatorMixin, SelectorMixin, BaseEstimator):
         self.return_train_score = return_train_score
         self.creator = creator
         self.log_config = log_config
-        self.features_proportion = features_proportion
+        self.min_genes = min_genes
 
         # Check that the estimator is compatible with scikit-learn
         if not is_classifier(self.estimator) and not is_regressor(self.estimator):
@@ -914,7 +914,7 @@ class GAFeatureSelectionCV(MetaEstimatorMixin, SelectorMixin, BaseEstimator):
             "individual",
             np_weighted_bool_individual,
             creator.Individual,
-            weight=self.features_proportion,
+            weight=self.min_genes,
             size=self.n_features,
         )
 
@@ -1065,8 +1065,8 @@ class GAFeatureSelectionCV(MetaEstimatorMixin, SelectorMixin, BaseEstimator):
         self.refit_metric = "score"
         self.multimetric_ = False
 
-        if self.max_features and not self.features_proportion:
-            self.features_proportion = self.max_features / self.n_features
+        if self.max_features and not self.min_genes:
+            self.min_genes = 1
 
         # Make sure the callbacks are valid
         self.callbacks = check_callback(callbacks)

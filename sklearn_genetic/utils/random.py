@@ -17,7 +17,7 @@ def weighted_bool_individual(icls, weight, size):
         List random (not uniform) bool values
     """
     if weight:
-        choice = random.choices([0, 1], [1 - weight, weight], k=size)
+        choice = random.choices([0, 1], [1 - weight / size, weight / size], k=size)
     else:
         choice = random.choices([0, 1], k=size)
 
@@ -42,7 +42,7 @@ def np_weighted_bool_individual(icls, weight, size):
     """
 
     if weight:
-        choice = np.random.choice(size, size=int(size * weight), replace=False)
+        choice = np.random.choice(size, size=weight, replace=False)
     else:
         choice = np.random.choice(size, size=size // 2, replace=False)
 
